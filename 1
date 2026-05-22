@@ -1,0 +1,21 @@
+CREATE TABLE mes_test_data (
+    work_order       VARCHAR2(50),   -- 工单
+    product_sn       VARCHAR2(50),   -- 产品序号 (通常是唯一的 SN)
+    customer_sn      VARCHAR2(50),   -- 客户序号
+    process_name     VARCHAR2(30),   -- 制程
+    station_name     VARCHAR2(30),   -- 站点
+    test_datetime    DATE,           -- 测试时间
+    tp_name          VARCHAR2(50),   -- TPName
+    sn_id            VARCHAR2(50),   -- SN
+    log_datetime     DATE,           -- Log_datetime
+    test_result      VARCHAR2(10),   -- 测试结果 (Pass/Fail)
+    test_item        VARCHAR2(200),  -- 测试项
+    test_value       NUMBER,         -- 测试值 (Oracle中存数字和精度用 NUMBER)
+    
+    -- 为这张表建立一个联合主键，确保“同一个产品在同一时间”的数据不会重复灌入（幂等性限制）
+    CONSTRAINT pk_mes_test PRIMARY KEY (product_sn, test_datetime)
+);
+
+-- 为常用查询条件建立普通索引（IX），方便以后 API 飞速查询
+CREATE INDEX ix_mes_work_order ON mes_test_data(work_order);
+CREATE INDEX ix_mes_station ON mes_test_data(station_name);
