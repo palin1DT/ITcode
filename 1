@@ -107,3 +107,170 @@ COMMIT;
 
 </body>
 </html>
+
+
+
+<%@ WebHandler Language="C#" Class="SearchHandler" %>
+using System;
+using System.Web;
+using System.Data;
+using Oracle.ManagedDataAccess.Client; // 引入刚才放入bin的Oracle驱动
+using System.Text;
+
+public class SearchHandler : IHttpHandler {
+    public void ProcessRequest (HttpContext context) {
+        context.Response.ContentType = "application/json";
+        context.Response.Charset = "utf-8";
+        
+        // 1. 获取前端传过来的关键词
+        string keyword = context.Request.QueryString["keyword"];
+        if (string.IsNullOrEmpty(keyword)) {
+            context.Response.Write("[]");
+            return;
+        }
+
+        // 2. 数据库连接字符串（指向你本地 64 位 Oracle）
+        string connStr = "Data Source=localhost:1521/ORCL;User Id=mes_user;Password=你的密码;"; 
+        // 注意：如果你的服务名是 XE，请把上面 /ORCL 改成 /XE
+
+        // 3. 编写 SQL 语句：同时模糊匹配工单(work_order)和产品SN(product_sn)
+        string sql = "SELECT work_order, product_sn, station_name, TO_CHAR(test_datetime, 'YYYY-MM-DD HH24:MI:SS') as test_time, test_result FROM mes_test_data WHERE work_order LIKE :kw OR product_sn LIKE :kw";
+
+        StringBuilder json = new StringBuilder();
+        json.Append("[");
+
+        try {
+            using (OracleConnection conn = new OracleConnection(connStr)) {
+                using (OracleCommand cmd = new OracleCommand(sql, conn)) {
+                    // 安全地绑定参数，防止 SQL 注入
+                    cmd.Parameters.Add(new OracleParameter("kw", "%" + keyword + "%"));
+                    conn.Open();
+                    
+                    using (OracleDataReader reader = cmd.ExecuteReader()) {
+                        bool first = true;
+                        while (reader.Read()) {
+                            if (!first) json.Append(",");
+                            json.Append("{");
+                            json.AppendFormat("\"work_order\":\"{0}\",", reader["work_order"]);
+                            json.AppendFormat("\"product_sn\":\"{0}\",", reader["product_sn"]);
+                            json.AppendFormat("\"station_name\":\"{0}\",", reader["station_name"]);
+                            json.AppendFormat("\"test_time\":\"{0}\",", reader["test_time"]);
+                            json.AppendFormat("\"test_result\":\"{0}\"", reader["test_result"]);
+                            json.Append("}");
+                            first = false;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            // 如果报错，把错误信息吐给前端方便排查
+            context.Response.Write("[{\"error\":\"" + ex.Message.Replace("\"", "\\\"") + "\"}]");
+            return;
+        }
+
+        json.Append("]");
+        context.Response.Write(json.ToString());
+    }
+
+    public bool IsReusable { get { return false; } }
+}
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MES 测试数据查询系统</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f6f9; }
+        .search-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+        input[type="text"] { width: 70%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .results { margin-top: 20px; background: white; padding: 20px; border-radius: 8px; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; }
+        .pass-tag { color: green; font-weight: bold; }
+        .fail-tag { color: red; font-weight: bold; }
+        .no-data { color: #666; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="search-box">
+    <h2>MES 数据看板 - 智能查询</h2>
+    <input type="text" id="keywordInput" placeholder="请输入工单号或产品 SN...">
+    <button onclick="startSearch()">查询</button>
+</div>
+
+<div class="results" id="resultSection">
+    <h3>查询结果</h3>
+    <table id="resultTable">
+        <thead>
+            <tr>
+                <th>工单号</th>
+                <th>产品 SN</th>
+                <th>工位站点</th>
+                <th>测试时间</th>
+                <th>测试结果</th>
+            </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+    </table>
+    <div id="noDataMessage" class="no-data" style="display:none;">未找到匹配的测试数据</div>
+</div>
+
+<script>
+    function startSearch() {
+        var keyword = document.getElementById('keywordInput').value.trim();
+        if(!keyword) { alert('请输入关键词！'); return; }
+        
+        // 发送异步请求给后端的 ashx 桥梁
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'search.ashx?keyword=' + encodeURIComponent(keyword), true);
+        
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                var data = JSON.parse(xhr.responseText);
+                var tbody = document.getElementById('resultBody');
+                tbody.innerHTML = ''; // 清空旧数据
+                
+                // 检查后端是否返回了报错
+                if(data.length === 1 && data[0].error) {
+                    alert("数据库连接或查询失败:\n" + data[0].error);
+                    return;
+                }
+
+                document.getElementById('resultSection').style.display = 'block';
+
+                if(data.length === 0) {
+                    document.getElementById('resultTable').style.display = 'none';
+                    document.getElementById('noDataMessage').style.display = 'block';
+                } else {
+                    document.getElementById('resultTable').style.display = 'table';
+                    document.getElementById('noDataMessage').style.display = 'none';
+                    
+                    // 循环把数据库里查出来的每一行塞进表格
+                    data.forEach(function(row) {
+                        var resultClass = row.test_result.toLowerCase() === 'pass' ? 'pass-tag' : 'fail-tag';
+                        var tr = document.createElement('tr');
+                        tr.innerHTML = '<td>' + row.work_order + '</td>' +
+                                       '<td>' + row.product_sn + '</td>' +
+                                       '<td>' + row.station_name + '</td>' +
+                                       '<td>' + row.test_time + '</td>' +
+                                       '<td><span class="' + resultClass + '">' + row.test_result + '</span></td>';
+                        tbody.appendChild(tr);
+                    });
+                }
+            }
+        };
+        xhr.send();
+    }
+</script>
+
+</body>
+</html>
