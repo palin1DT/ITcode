@@ -19,3 +19,24 @@ CREATE TABLE mes_test_data (
 -- 为常用查询条件建立普通索引（IX），方便以后 API 飞速查询
 CREATE INDEX ix_mes_work_order ON mes_test_data(work_order);
 CREATE INDEX ix_mes_station ON mes_test_data(station_name);
+
+INSERT INTO mes_test_data (
+    work_order, product_sn, customer_sn, process_name, station_name, 
+    test_datetime, tp_name, sn_id, log_datetime, test_result, test_item, test_value
+) VALUES (
+    'WO20260526001', 
+    'SN-TEST-999', 
+    'CUST_A', 
+    'FT', 
+    'STATION_01', 
+    TO_DATE('2026-05-26 10:00:00', 'YYYY-MM-DD HH24:MI:SS'), 
+    'TP_BASE', 
+    'SN_ID_001', 
+    SYSDATE, 
+    'Pass', 
+    'Voltage_Test', 
+    3.3
+);
+
+-- 执行完 INSERT 后，必须执行 COMMIT 提交，数据才会真正写入硬盘
+COMMIT;
