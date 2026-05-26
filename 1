@@ -16,7 +16,7 @@ CREATE TABLE mes_test_data (
     CONSTRAINT pk_mes_test PRIMARY KEY (product_sn, test_datetime)
 );
 
--- 为常用查询条件建立普通索引（IX），方便以后 API 飞速查询
+-- 为常用查询条件建立普通索引（IX），方便以后 API 查询
 CREATE INDEX ix_mes_work_order ON mes_test_data(work_order);
 CREATE INDEX ix_mes_station ON mes_test_data(station_name);
 
